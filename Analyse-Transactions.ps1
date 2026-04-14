@@ -94,7 +94,7 @@ function Parse-LigneSellwandNew {
         [string]$dateFichier
     )
     
-    if ($ligne -match '^\[(\d{2}:\d{2}:\d{2})\]\s+(?:\[ShulkerFix\]\s+)?\.?(\S+)\s+sold\s+([0-9,]+)x\s+items\s+\[(.+?)\](?:\s+from shulker boxes)?\s+and\s+earned\s+([0-9,.]+)\s+\(multiplier:\s+([0-9.]+)(?:,\s+uses:\s+(\d+))?\)') {
+    if ($ligne -match '^\[(\d{2}:\d{2}:\d{2})\]\s+(?:\[ShulkerFix\]\s+)?\.?(\S+)\s+sold\s+([0-9,]+)x\s+items\s+\[(.+?)\](?:\s+from shulker boxes)?\s+and\s+earned\s+([0-9,.]+)\s+\(multiplier:\s+[0-9.]+(?:,\s+uses:\s+\d+)?\)') {
         $heure = $matches[1]
         $joueur = $matches[2]
         $quantiteTotaleStr = $matches[3] -replace ',', ''
@@ -104,7 +104,11 @@ function Parse-LigneSellwandNew {
         $montant = [decimal]$montantStr
         
         $dateStr = "$dateFichier $heure"
-        $date = [DateTime]::ParseExact($dateStr, "yyyy-MM-dd HH:mm:ss", $null)
+        try {
+            $date = [DateTime]::ParseExact($dateStr, "yyyy-MM-dd HH:mm:ss", $null)
+        } catch {
+            return $null
+        }
         
         $itemsListe = @()
         $itemPattern = '(\d+)x\s+([A-Z_]+)'
@@ -189,6 +193,7 @@ foreach ($dossier in $dossiersSellwand) {
     $fichiersLog = Get-ChildItem -Path $dossier.FullName -Filter "*.log" -ErrorAction SilentlyContinue
     foreach ($fichier in $fichiersLog) {
         $dateFichier = [System.IO.Path]::GetFileNameWithoutExtension($fichier.Name)
+        if ($dateFichier -notmatch '^\d{4}-\d{2}-\d{2}$') { continue }
         $lignes = Get-Content $fichier.FullName -Encoding UTF8
         foreach ($ligne in $lignes) {
             if ($ligne.Trim() -eq '') { continue }
