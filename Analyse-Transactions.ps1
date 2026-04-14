@@ -139,6 +139,20 @@ function Parse-LigneSellwandNew {
     return $null
 }
 
+# ===== FONCTION: Normaliser les noms d'items =====
+# Convertit "SHULKER_BOX" et "Shulker Box" vers un format uniforme "Shulker Box"
+function Normalize-ItemName {
+    param([string]$nom)
+    
+    # Remplacer les underscores par des espaces
+    $nom = $nom -replace '_', ' '
+    
+    # Convertir en Title Case (premiere lettre majuscule, reste minuscule pour chaque mot)
+    $nom = (Get-Culture).TextInfo.ToTitleCase($nom.ToLower())
+    
+    return $nom
+}
+
 function Get-NomMoisFR {
     param([int]$mois)
     $moisFR = @{
@@ -238,7 +252,7 @@ foreach ($trans in $transactionsAvecItems) {
     }
     
     foreach ($item in $trans.Items) {
-        $itemNom = $item.Item
+        $itemNom = Normalize-ItemName -nom $item.Item
         
         if (-not $rapportItemsMensuel[$mois].Items.ContainsKey($itemNom)) {
             $rapportItemsMensuel[$mois].Items[$itemNom] = @{
@@ -656,7 +670,7 @@ foreach ($trans in $transactionsJoueurs) {
     $montantParItem = $trans.Montant / $trans.Items.Count
     
     foreach ($item in $trans.Items) {
-        $itemNom = $item.Item
+        $itemNom = Normalize-ItemName -nom $item.Item
         
         if (-not $rapportJoueursMensuel[$mois].Joueurs[$trans.Joueur].Items.ContainsKey($itemNom)) {
             $rapportJoueursMensuel[$mois].Joueurs[$trans.Joueur].Items[$itemNom] = @{
