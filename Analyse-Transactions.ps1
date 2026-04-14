@@ -52,7 +52,7 @@ function Parse-LigneTransactionNormale {
     return $null
 }
 
-# ===== FONCTION 2: Parser les ventes SELLWAND =====
+# ===== FONCTION 2: Parser les ventes SELLWAND (ancien format .txt) =====
 function Parse-LigneSellwand {
     param([string]$ligne)
     
@@ -82,6 +82,54 @@ function Parse-LigneSellwand {
             Montant = $montant
             Source = "Sellwand"
             QuantiteSellwand = $quantite
+        }
+    }
+    return $null
+}
+
+# ===== FONCTION 3: Parser les ventes SELLWAND (nouveau format .log) =====
+function Parse-LigneSellwandNew {
+    param(
+        [string]$ligne,
+        [string]$dateFichier
+    )
+    
+    if ($ligne -match '^\[(\d{2}:\d{2}:\d{2})\]\s+(?:\[ShulkerFix\]\s+)?\.?(\S+)\s+sold\s+([0-9,]+)x\s+items\s+\[(.+?)\](?:\s+from shulker boxes)?\s+and\s+earned\s+([0-9,.]+)\s+\(multiplier:\s+([0-9.]+)(?:,\s+uses:\s+(\d+))?\)') {
+        $heure = $matches[1]
+        $joueur = $matches[2]
+        $quantiteTotaleStr = $matches[3] -replace ',', ''
+        $quantiteTotale = [int]$quantiteTotaleStr
+        $itemsRaw = $matches[4]
+        $montantStr = $matches[5] -replace ',', ''
+        $montant = [decimal]$montantStr
+        
+        $dateStr = "$dateFichier $heure"
+        $date = [DateTime]::ParseExact($dateStr, "yyyy-MM-dd HH:mm:ss", $null)
+        
+        $itemsListe = @()
+        $itemPattern = '(\d+)x\s+([A-Z_]+)'
+        $itemMatches = [regex]::Matches($itemsRaw, $itemPattern)
+        
+        foreach ($match in $itemMatches) {
+            $quantite = [int]$match.Groups[1].Value
+            $nomItem = $match.Groups[2].Value.Trim()
+            
+            if ($nomItem -and $nomItem.Length -gt 0) {
+                $itemsListe += [PSCustomObject]@{
+                    Item = $nomItem
+                    Quantite = $quantite
+                }
+            }
+        }
+        
+        return [PSCustomObject]@{
+            Date = $date
+            Joueur = $joueur
+            Type = "Vente"
+            Items = $itemsListe
+            Montant = $montant
+            Source = "SellwandNew"
+            QuantiteSellwand = $quantiteTotale
         }
     }
     return $null
@@ -125,11 +173,26 @@ $dossiersSellwand = Get-ChildItem -Path $DossierLogs -Directory -Filter "Sellwan
 
 $ventesSellwand = @()
 foreach ($dossier in $dossiersSellwand) {
-    $fichiersSellwand = Get-ChildItem -Path $dossier.FullName -Filter "*.txt"
-    foreach ($fichier in $fichiersSellwand) {
+    Write-Host "   - Dossier: $($dossier.Name)" -ForegroundColor Gray
+    
+    # Ancien format (.txt) - DD.MM.YYYY.txt
+    $fichiersTxt = Get-ChildItem -Path $dossier.FullName -Filter "*.txt" -ErrorAction SilentlyContinue
+    foreach ($fichier in $fichiersTxt) {
         $lignes = Get-Content $fichier.FullName -Encoding UTF8
         foreach ($ligne in $lignes) {
             $vente = Parse-LigneSellwand -ligne $ligne
+            if ($vente) { $ventesSellwand += $vente }
+        }
+    }
+    
+    # Nouveau format (.log) - YYYY-MM-DD.log
+    $fichiersLog = Get-ChildItem -Path $dossier.FullName -Filter "*.log" -ErrorAction SilentlyContinue
+    foreach ($fichier in $fichiersLog) {
+        $dateFichier = [System.IO.Path]::GetFileNameWithoutExtension($fichier.Name)
+        $lignes = Get-Content $fichier.FullName -Encoding UTF8
+        foreach ($ligne in $lignes) {
+            if ($ligne.Trim() -eq '') { continue }
+            $vente = Parse-LigneSellwandNew -ligne $ligne -dateFichier $dateFichier
             if ($vente) { $ventesSellwand += $vente }
         }
     }
@@ -148,7 +211,10 @@ Write-Host "Generation Rapport ITEMS..." -ForegroundColor Cyan
 
 $rapportItemsMensuel = @{}
 
-foreach ($trans in $transactionsNormales) {
+# Inclure les transactions normales ET les ventes sellwand nouveau format (avec items)
+$transactionsAvecItems = $transactionsNormales + ($ventesSellwand | Where-Object { $_.Items.Count -gt 0 })
+
+foreach ($trans in $transactionsAvecItems) {
     $mois = $trans.Date.ToString("yyyy-MM")
     
     if (-not $rapportItemsMensuel.ContainsKey($mois)) {
@@ -552,7 +618,10 @@ Write-Host "Generation Rapport JOUEURS..." -ForegroundColor Cyan
 
 $rapportJoueursMensuel = @{}
 
-foreach ($trans in $transactionsNormales) {
+# Inclure les transactions normales ET les ventes sellwand nouveau format (avec items)
+$transactionsJoueurs = $transactionsNormales + ($ventesSellwand | Where-Object { $_.Items.Count -gt 0 })
+
+foreach ($trans in $transactionsJoueurs) {
     if ($trans.Type -ne "Vente") { continue }
     
     $mois = $trans.Date.ToString("yyyy-MM")
